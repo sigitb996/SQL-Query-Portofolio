@@ -35,17 +35,17 @@
 -- LIFECYCLE 600;
 
 --ADD COLUMNS
--- ALTER TABLE lazada_analyst_dev.id_retail_ops_fulfillment_sku_snapshot
+-- ALTER TABLE id_retail_ops_fulfillment_sku_snapshot
 -- ADD COLUMNS (
 -- 	vat DOUBLE
 -- );
 
--- ALTER TABLE lazada_analyst_dev.id_retail_ops_fulfillment_sku_snapshot
+-- ALTER TABLE id_retail_ops_fulfillment_sku_snapshot
 -- CHANGE vat vat DOUBLE AFTER contract_type ;
 
 --====COMBINE ALL FULFILLMENT SKU RELATED DATA ====
 
-INSERT OVERWRITE TABLE lazada_analyst_dev.id_retail_ops_fulfillment_sku_snapshot
+INSERT OVERWRITE TABLE id_retail_ops_fulfillment_sku_snapshot
 PARTITION(ds)
 Select cb.lazada_sku
     , cb.fulfillment_sku
@@ -96,18 +96,18 @@ from (
 	, business_type_level2
 	, sc_item_id 
 	, ds
-	from lazada_cdm.dim_lzd_prd_sku_core_id
+	from dim_lzd_prd_sku_core_id
 	---SKU core data refreshment usually done at 4AM. Assume we will already have latest data everyday by 5AM.
 	WHERE venture = 'ID'
 	and business_type_level2 = 'LazMall - Retail'
 	and ds = '${bizdate}') pk 
 left join (
 	SELECT *
-	from lazada_analyst_dev.id_retail_ops_ascp_products_snapshot 
+	from id_retail_ops_ascp_products_snapshot 
 	--data refreshment on 10AM since source data ASCP finished usually around ~9.40AM. Will take max data at running schedule for now.
 	Where ds = 
 	(Select max(ds)
-				from lazada_analyst_dev.id_retail_ops_ascp_products_snapshot)
+				from id_retail_ops_ascp_products_snapshot)
 				) ascp 
 on pk.sc_item_id = ascp.item_id) cb 
 
@@ -118,11 +118,11 @@ left join (
 		, supplier_name
 		, supplier_name_en
 		, company_name
-		from ascp_lazada_data.s_vendor_base_info
+		from s_vendor_base_info
 		---Vendor base info data refreshment usually done at 9.40AM
 		Where ds = 
 		(Select max(ds)
-				from ascp_lazada_data.s_vendor_base_info)
+				from s_vendor_base_info)
 		and country_code = 'ID') vv
 	on cb.preferred_supplier = vv.supplier_id
 
@@ -152,8 +152,6 @@ left join (
 				from lazada_retail.lzd_dabao_inv_di) 
 		and business_type_level2 = 'LazMall - Retail'
 		and venture = 'ID'
-		-- and to_char(po_create_date, 'yyyymmdd') >= to_char(dateadd(to_date('${bizdate}','yyyymmdd'),-3,'mm'),'yyyymmdd')
-		-- and fulfillment_sku = '6102610468_ID-11678898037'
 		) d
 	on cb.lazada_sku = d.lazada_sku
 
@@ -170,11 +168,11 @@ left join (SELECT lazada_sku
 		, ds
 		, row_number() over(partition by lazada_sku
 					order by last_modify_date desc, min_order_quantity desc) rn 
-		from lazada_cdm.dim_lzd_ret_prd_sku_cost_id
+		from dim_lzd_ret_prd_sku_cost_id
 		---no info on data refreshment schedule.
 		Where ds = 
 		(Select max(ds)
-				from lazada_cdm.dim_lzd_ret_prd_sku_cost_id)
+				from dim_lzd_ret_prd_sku_cost_id)
 		and venture = 'ID') cs
 	on cb.lazada_sku = cs.lazada_sku
 	and cs.rn = 1
@@ -187,11 +185,11 @@ left join (
 		, company_name
 		, gmt_create
 		, row_number() over(partition by supplier_name order by gmt_create desc) rn
-		from ascp_lazada_data.s_vendor_base_info
+		from s_vendor_base_info
 		---Vendor base info data refreshment usually done at 9.40AM. Vendor data supposedly safe to use max data on the run timing. No frequent data changing
 		Where ds = 
 		(Select max(ds)
-				from ascp_lazada_data.s_vendor_base_info)
+				from s_vendor_base_info)
 		and country_code = 'ID') v
 	on cs.supplier_id = v.supplier_id
 	and v.rn = 1
@@ -208,9 +206,9 @@ from
     , get_json_object(attribute,"$.nextPriceDate") nextPriceDate
     , get_json_object(attribute,"$.nextPrice")  nextPrice
     , ROW_NUMBER () OVER (PARTITION BY sku_code ORDER BY gmt_modified DESC) rnk
-    FROM ascp_lazada_data.s_ascp_purchase_price_history_lazada price
+    FROM s_ascp_purchase_price_history_lazada price
     WHERE ds = 
-	(Select max(ds) from ascp_lazada_data.s_ascp_purchase_price_history_lazada )
+	(Select max(ds) from s_ascp_purchase_price_history_lazada )
     AND price.group_id IN (81031)) raw ) csraw 
 on cb.fulfillment_sku = csraw.sku_code
 -- and cs.supplier_id = csraw.supplier_id 
@@ -222,9 +220,9 @@ left join
     (SELECT sku_code, supplier_id, purchase_price, special_purchase_price, price_start_date, price_deadline_date
     , group_id
     , ROW_NUMBER () OVER (PARTITION BY sku_code ORDER BY gmt_modified desc, price_deadline_date DESC) rnk
-    FROM ascp_lazada_data.s_ascp_purchase_price_history_lazada price
+    FROM s_ascp_purchase_price_history_lazada price
     WHERE ds = 
-	(Select max(ds) from ascp_lazada_data.s_ascp_purchase_price_history_lazada )
+	(Select max(ds) from s_ascp_purchase_price_history_lazada )
     AND price.group_id IN (81031)
     and special_purchase_price is not null
 	and ds >= to_char(price_start_date, 'yyyymmdd')
